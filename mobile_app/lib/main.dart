@@ -1,4 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:chopper/chopper.dart';
 import 'package:flutter/material.dart';
+import 'package:mobile_app/generated_api/client_index.dart';
 
 void main() {
   runApp(const MyApp());
@@ -7,27 +13,11 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
@@ -39,15 +29,6 @@ class MyApp extends StatelessWidget {
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
   final String title;
 
   @override
@@ -56,58 +37,53 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
+  String _text = "";
 
   void _incrementCounter() {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
       _counter++;
     });
+    _test();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  _test() async {
+    print("test");
+
+    final Openapi api = Openapi.create(
+      baseUrl: Uri.parse("http://localhost:5800"),
+      errorConverter: const JsonConverter(),
+    );
+
+    try {
+      final data1 = await api.helloGet(name: "Olly");
+      setState(() {
+        _text = data1.body!; // << Is string, or can be complex object.
+      });
+    } catch (e) {
+      print(e);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             const Text(
               'You have pushed the button this many times:',
             ),
+            Text(_text),
             Text(
               '$_counter',
               style: Theme.of(context).textTheme.headlineMedium,
@@ -119,7 +95,141 @@ class _MyHomePageState extends State<MyHomePage> {
         onPressed: _incrementCounter,
         tooltip: 'Increment',
         child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      ),
+    );
+  }
+}
+
+class MyAuthenticator extends Authenticator {
+  String token = "";
+
+  @override
+  FutureOr<Request?> authenticate(
+    Request request,
+    Response response, [
+    Request? originalRequest,
+  ]) async {
+    if (response.statusCode == HttpStatus.unauthorized) {
+      String? newToken = await refreshToken();
+
+      final Map<String, String> updatedHeaders = Map<String, String>.of(request.headers);
+
+      if (newToken != null) {
+        newToken = 'Bearer $newToken';
+        updatedHeaders.update('Authorization', (String _) => newToken!, ifAbsent: () => newToken!);
+        return request.copyWith(headers: updatedHeaders);
+      }
+    }
+    return null;
+  }
+
+  Future<String?> refreshToken() async {
+    return token;
+  }
+}
+
+@immutable
+class JsonConverter implements Converter, ErrorConverter {
+  const JsonConverter();
+
+  @override
+  Request convertRequest(Request request) => encodeJson(
+        applyHeader(
+          request,
+          contentTypeKey,
+          jsonHeaders,
+          override: false,
+        ),
+      );
+
+  Request encodeJson(Request request) {
+    final String? contentType = request.headers[contentTypeKey];
+
+    if ((contentType?.contains(jsonHeaders) ?? false) && (request.body.runtimeType != String || !isJson(request.body))) {
+      return request.copyWith(body: json.encode(request.body));
+    }
+
+    return request;
+  }
+
+  FutureOr<Response> decodeJson<BodyType, InnerType>(Response response) async {
+    final List<String> supportedContentTypes = [jsonHeaders, jsonApiHeaders];
+
+    if (response.statusCode != 200) {
+      // Convert body to json
+      JsonDecoder decoder = const JsonDecoder();
+      var body = decoder.convert(response.body);
+      throw ApiError(status: body['status'], message: body['message']);
+    }
+
+    final String? contentType = response.headers[contentTypeKey];
+    var body = response.body;
+
+    if (supportedContentTypes.contains(contentType)) {
+      body = utf8.decode(response.bodyBytes);
+    }
+
+    body = await tryDecodeJson(body);
+    if (isTypeOf<BodyType, Iterable<InnerType>>()) {
+      body = body.cast<InnerType>();
+    } else if (isTypeOf<BodyType, Map<String, InnerType>>()) {
+      body = body.cast<String, InnerType>();
+    }
+
+    return response.copyWith<BodyType>(body: body);
+  }
+
+  @override
+  FutureOr<Response<BodyType>> convertResponse<BodyType, InnerType>(
+    Response response,
+  ) async =>
+      (await decodeJson<BodyType, InnerType>(response)) as Response<BodyType>;
+
+  @protected
+  FutureOr<dynamic> tryDecodeJson(String data) {
+    try {
+      return json.decode(data);
+    } catch (e) {
+      chopperLogger.warning(e);
+
+      return data;
+    }
+  }
+
+  @override
+  FutureOr<Response> convertError<BodyType, InnerType>(
+    Response response,
+  ) async =>
+      await decodeJson(response);
+
+  static FutureOr<Response<BodyType>> responseFactory<BodyType, InnerType>(
+    Response response,
+  ) =>
+      const JsonConverter().convertResponse<BodyType, InnerType>(response);
+
+  static Request requestFactory(Request request) => const JsonConverter().convertRequest(request);
+
+  @visibleForTesting
+  static bool isJson(dynamic data) {
+    try {
+      json.decode(data);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+class ApiError {
+  final String status;
+  final String message;
+
+  ApiError({required this.status, required this.message});
+
+  factory ApiError.fromJson(Map<String, dynamic> json) {
+    return ApiError(
+      status: json['status'],
+      message: json['message'],
     );
   }
 }

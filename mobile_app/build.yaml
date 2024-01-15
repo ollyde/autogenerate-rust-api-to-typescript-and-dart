@@ -1,0 +1,14 @@
+targets:
+  $default:
+    sources:
+      - lib/**
+      - open_api/**
+    builders:
+      swagger_dart_code_generator:
+        # https://pub.dev/packages/swagger_dart_code_generator
+        options:
+          input_folder: "open_api/"
+          output_folder: "lib/generated_api/"
+          add_base_path_to_requests: true
+          input_urls: 
+            - url: "http://127.0.0.1:5800/api-doc/openapi.json"
