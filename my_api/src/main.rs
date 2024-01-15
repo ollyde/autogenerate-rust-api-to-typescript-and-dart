@@ -1,3 +1,5 @@
+use salvo::cors::Cors;
+use salvo::hyper::Method;
 use salvo::oapi::extract::*;
 use salvo::prelude::*;
 
@@ -14,9 +16,15 @@ async fn main() {
 
     let doc = OpenApi::new("test api", "0.0.1").merge_router(&router);
 
+    let cors = Cors::new()
+        .allow_origin("*")
+        .allow_methods(vec![Method::GET, Method::POST, Method::DELETE])
+        .into_handler();
+
     let router = router
         .push(doc.into_router("/api-doc/openapi.json"))
-        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("ui"));
+        .push(SwaggerUi::new("/api-doc/openapi.json").into_router("ui"))
+        .hoop(cors);
 
     let acceptor = TcpListener::new("127.0.0.1:5800").bind().await;
     Server::new(acceptor).serve(router).await;
